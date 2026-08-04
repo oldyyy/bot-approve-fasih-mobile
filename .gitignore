@@ -1,0 +1,15 @@
+# Lingkungan Python
+.venv/
+__pycache__/
+*.pyc
+
+# Log dan CSV hasil run memuat nama responden, nomor bangunan, dan status
+# assignment yang sebenarnya. Jangan pernah ikut ter-commit.
+catatan/
+
+# Berkas kunci wilayah, hanya relevan selama run berjalan.
+kunci-*.json
+
+# Sisa berkas uji
+layar_uji.png
+*.xml
