@@ -1,1 +1,2 @@
 uiautomator2>=3.7
+pillow>=10        # membaca warna baris dari tangkapan jendela

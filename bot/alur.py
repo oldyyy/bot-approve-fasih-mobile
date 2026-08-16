@@ -72,6 +72,7 @@ LBL_SIDEBAR = ["sidebar-toggle"]
 LBL_APPROVAL = ["APPROVAL", "Approval"]
 LBL_APPROVE = ["APPROVE", "Approve"]
 LBL_REJECT = ["REJECT", "Reject"]
+LBL_UNAPPROVE = ["UNAPPROVE", "Unapprove"]
 
 DIALOG_BUKA = "Anda akan membuka assignment ini?"
 PROMPT_APPROVE = "Apa yang Anda ingin lakukan untuk assignment ini ?"
@@ -877,6 +878,34 @@ def reject(d, catat=print) -> None:
         catat("    tidak ada tombol konfirmasi - memeriksa hasilnya")
         return
     catat("    tap konfirmasi reject")
+    tap_label(d, LBL_YA + LBL_IYA, batas=15.0)
+
+
+def unapprove(d, catat=print) -> None:
+    """FAB bukan-pencacah > Approval > UNAPPROVE > konfirmasi.
+
+    Layar pilihan untuk assignment yang sudah ter-approve hanya memuat satu
+    tombol, jadi tidak ada tombol berbahaya bertetangga di sini.
+    """
+    if layar.cari_teks_mana_saja(layar.pohon(d), [PROMPT_APPROVE]) is None:
+        catat("    tap FAB bukan-pencacah")
+        tap_id(d, "expendable_fab_bukan_pencacah")
+        catat("    tap Approval")
+        tap_label(d, LBL_APPROVAL)
+        catat("    menunggu layar approval siap")
+        tunggu_teks(d, [PROMPT_APPROVE], batas=90.0)
+    else:
+        catat("    layar approval sudah tampil")
+
+    catat("    tap UNAPPROVE")
+    tap_label(d, LBL_UNAPPROVE, batas=30.0)
+
+    try:
+        tunggu_teks(d, LBL_YA + LBL_IYA, batas=12.0)
+    except AlurGagal:
+        catat("    tidak ada tombol konfirmasi")
+        return
+    catat("    tap konfirmasi")
     tap_label(d, LBL_YA + LBL_IYA, batas=15.0)
 
 

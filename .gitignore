@@ -10,6 +10,11 @@ catatan/
 # Berkas kunci wilayah, hanya relevan selama run berjalan.
 kunci-*.json
 
+# Daftar nama untuk unapprove-list / reject-list memuat nama responden
+# sungguhan. Contohnya ada di daftar.contoh.txt.
+daftar*.txt
+!daftar.contoh.txt
+
 # Sisa berkas uji
 layar_uji.png
 *.xml

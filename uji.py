@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 import xml.etree.ElementTree as ET
 
-from bot import alur, layar
+from bot import alur, layar, warna
 
 gagal = 0
 
@@ -62,6 +62,17 @@ cek("R E J E C T di daftar terlarang",
     layar.normalisasi("R E J E C T") in alur.TERLARANG, True)
 cek("APPROVE tidak terlarang",
     layar.normalisasi("APPROVE") in alur.TERLARANG, False)
+
+print("\n-- klasifikasi warna baris (RGB terukur dari layar) --")
+for rgb, harap in [((6, 214, 160), "hijau"),      # Approve
+                   ((12, 178, 255), "biru"),      # Submit
+                   ((239, 71, 111), "merah"),     # Reject
+                   ((255, 209, 102), "kuning"),   # Draft
+                   ((255, 255, 255), "putih")]:   # Open
+    cek(f"klasifikasi {rgb}", warna.klasifikasi(rgb), harap)
+
+# Kuning berkomponen merah tinggi, jadi urutan pemeriksaan menentukan.
+cek("kuning tidak terbaca merah", warna.klasifikasi((255, 209, 102)) != "merah", True)
 
 print("\n-- pembeda & status baris: susunan kolom beda antar survei --")
 for nama, sel, pembeda, status in [
