@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from bot import alur
+from bot.kunci import KunciDipakai, kunci_wilayah
 from bot.perangkat import hubungkan
 
 CATATAN = Path(__file__).resolve().parent / "catatan"
@@ -31,6 +32,8 @@ def main() -> int:
                    help="berhenti setelah N baris (untuk uji cepat)")
     p.add_argument("--perangkat", default=None,
                    help="port atau serial instance BlueStacks, mis. 5665")
+    p.add_argument("--abaikan-kunci", action="store_true",
+                   help="jalan walau wilayahnya terkunci run lain (hati-hati)")
     a = p.parse_args()
 
     CATATAN.mkdir(exist_ok=True)
@@ -52,11 +55,30 @@ def main() -> int:
             catat(f"GAGAL: {e}")
             return 1
 
+        # Pindai tidak mengubah data, tapi tetap mengendalikan UI: kalau bot
+        # lain sedang bekerja di wilayah yang sama, keduanya saling merusak
+        # navigasi. Jadi wilayahnya ikut dikunci.
+        try:
+            wilayah = alur.tunggu_daftar_siap(d)
+        except alur.AlurGagal as e:
+            catat(f"GAGAL: {e}")
+            return 1
+
+        try:
+            pengunci = kunci_wilayah(CATATAN, wilayah, d.serial,
+                                     paksa=a.abaikan_kunci)
+            pengunci.__enter__()
+        except KunciDipakai as e:
+            catat(f"GAGAL: {e}")
+            return 1
+
         try:
             hasil = alur.pindai(d, maks=a.maks, catat=catat)
         except alur.AlurGagal as e:
             catat(f"\nBERHENTI: {e}")
             return 1
+        finally:
+            pengunci.__exit__(None, None, None)
 
         layak = [r for r in hasil if r.layak]
         catat(f"\nTotal terpindai : {len(hasil)}")

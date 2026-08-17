@@ -63,6 +63,37 @@ cek("R E J E C T di daftar terlarang",
 cek("APPROVE tidak terlarang",
     layar.normalisasi("APPROVE") in alur.TERLARANG, False)
 
+print("\n-- pilih_baris: banyak hasil, ambil yang nama KK-nya persis --")
+from bot.daftar import pilih_baris
+
+
+def _baris(nama):
+    return layar.Baris(nama=nama, terbentang=False, bounds=(0, 0, 0, 0))
+
+
+MUSTAFA = [_baris(n) for n in [
+    "SATIFA HI. ABBAS / AMIRULLAH D. MUSTAFA",
+    "INAFIKAR MUSTAFA / INDRIANI PUTRI AMIRUDDIN",
+    "MUSTAFA / NURWANI MARZAL",
+    "MAJID D. MUSTAFA / SURNI ABJAN",
+    "MUSTAFA ESA / RAKIBA JAMIM"]]
+pilih = pilih_baris("MUSTAFA", MUSTAFA)
+cek("5 hasil -> pilih 'MUSTAFA / NURWANI MARZAL'",
+    pilih.nama if pilih else None, "MUSTAFA / NURWANI MARZAL")
+
+pilih = pilih_baris("MUSTAFA ESA", MUSTAFA)
+cek("'MUSTAFA ESA' -> baris sendiri",
+    pilih.nama if pilih else None, "MUSTAFA ESA / RAKIBA JAMIM")
+
+# Nama terpotong tidak bisa dipastikan kalau hasilnya banyak.
+cek("nama terpotong tetap ambigu", pilih_baris("MUSTAF", MUSTAFA), None)
+cek("hasil tunggal langsung dipakai",
+    pilih_baris("APA SAJA", [_baris("BUDI / SITI")]).nama, "BUDI / SITI")
+cek("tanpa hasil -> None", pilih_baris("X", []), None)
+cek("tanpa pemisah garis miring",
+    pilih_baris("SYAEFUDIN", [_baris("SYAEFUDIN"),
+                              _baris("AHMAD SYAEFUDIN / X")]).nama, "SYAEFUDIN")
+
 print("\n-- klasifikasi warna baris (RGB terukur dari layar) --")
 for rgb, harap in [((6, 214, 160), "hijau"),      # Approve
                    ((12, 178, 255), "biru"),      # Submit

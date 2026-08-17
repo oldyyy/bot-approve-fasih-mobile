@@ -38,6 +38,24 @@ def cari_baris(d, nama: str, jeda: float = 2.5):
     return root, layar.baris_terlihat(root)
 
 
+def pilih_baris(nama: str, baris: list):
+    """Pilih satu baris dari hasil pencarian; None kalau tidak bisa dipastikan.
+
+    Nama baris berformat "NAMA KK / ANGGOTA LAINNYA", dan pencarian bersifat
+    substring sehingga bisa mengenai nama anggota atau nama lain yang memuat
+    kata yang sama. Kalau hasilnya lebih dari satu, yang dipilih adalah baris
+    yang nama kepala keluarganya persis sama dengan yang dicari.
+    """
+    if not baris:
+        return None
+    if len(baris) == 1:
+        return baris[0]
+    incar = nama.strip().casefold()
+    persis = [b for b in baris
+              if b.nama.split("/")[0].strip().casefold() == incar]
+    return persis[0] if len(persis) == 1 else None
+
+
 def baca_warna(d, hwnd, baris) -> tuple[str, tuple[int, int, int]]:
     img = warna.tangkap(hwnd)
     skala, offset = warna.kalibrasi(img)
@@ -49,10 +67,12 @@ def _proses(d, hwnd, nama, syarat, selesai, aksi, catat) -> tuple[str, str]:
     root, baris = cari_baris(d, nama)
     if not baris:
         return "tidak ditemukan", ""
+    b = pilih_baris(nama, baris)
+    if b is None:
+        return "ambigu", f"{len(baris)} baris cocok: {[x.nama for x in baris]}"
     if len(baris) > 1:
-        return "ambigu", f"{len(baris)} baris cocok: {[b.nama for b in baris]}"
+        catat(f"    {len(baris)} baris cocok, dipilih yang nama KK-nya persis")
 
-    b = baris[0]
     catat(f"    baris  : {b.label}")
 
     for percobaan in range(1, MAKS_PERCOBAAN + 1):
@@ -73,9 +93,9 @@ def _proses(d, hwnd, nama, syarat, selesai, aksi, catat) -> tuple[str, str]:
         alur.pastikan_daftar_siap(d, catat=catat)
 
         root, baris = cari_baris(d, nama)
-        if not baris:
-            return "hilang setelah aksi", ""
-        b = baris[0]
+        b = pilih_baris(nama, baris)
+        if b is None:
+            return ("hilang setelah aksi" if not baris else "ambigu"), ""
 
     return "belum berubah", f"masih {syarat} setelah {MAKS_PERCOBAAN} percobaan"
 
@@ -127,7 +147,9 @@ def jalankan_daftar(*, nama_alur: str, deskripsi: str, warna_syarat: str,
             d = hubungkan(a.perangkat)
             judul = warna.nama_instance(d.serial)
             hwnd = warna.cari_jendela(judul)
-            wilayah = alur.tunggu_daftar_siap(d)
+            # pastikan_daftar_siap, bukan sekadar menunggu: run sebelumnya
+            # bisa meninggalkan kuesioner terbuka.
+            wilayah = alur.pastikan_daftar_siap(d)
         except (RuntimeError, warna.GagalTangkap, alur.AlurGagal) as e:
             catat(f"GAGAL: {e}")
             return 1
@@ -153,12 +175,19 @@ def jalankan_daftar(*, nama_alur: str, deskripsi: str, warna_syarat: str,
                     try:
                         if a.kering:
                             root, baris = cari_baris(d, nama)
-                            if not baris:
-                                res, ket = "tidak ditemukan", ""
+                            b = pilih_baris(nama, baris)
+                            if b is None:
+                                res = "tidak ditemukan" if not baris else "ambigu"
+                                ket = ("" if not baris else
+                                       f"{len(baris)} baris cocok: "
+                                       f"{[x.nama for x in baris]}")
                             else:
-                                wr, rgb = baca_warna(d, hwnd, baris[0])
-                                st = layar.nilai_kolom(root, baris[0], "Status")
-                                catat(f"    {baris[0].label}")
+                                if len(baris) > 1:
+                                    catat(f"    {len(baris)} baris cocok, "
+                                          "dipilih yang nama KK-nya persis")
+                                wr, rgb = baca_warna(d, hwnd, b)
+                                st = layar.nilai_kolom(root, b, "Status")
+                                catat(f"    {b.label}")
                                 catat(f"    warna  : {wr} {rgb}  status={st}")
                                 res, ket = f"warna {wr}", f"{rgb}, status={st}"
                         else:
@@ -170,6 +199,19 @@ def jalankan_daftar(*, nama_alur: str, deskripsi: str, warna_syarat: str,
                     hasil.append((nama, res, ket))
                     w.writerow([nama, res, ket])
                     f.flush()
+
+                    # Satu nama yang gagal sering meninggalkan layar dalam
+                    # keadaan tidak siap - tanpa pemulihan, semua nama
+                    # sesudahnya ikut gagal dengan sebab yang sama dan
+                    # laporannya jadi tidak berguna.
+                    if res == "GAGAL":
+                        try:
+                            alur.pastikan_daftar_siap(d, wilayah=wilayah,
+                                                      catat=catat)
+                            catat("    layar dipulihkan, lanjut")
+                        except alur.AlurGagal as e:
+                            catat(f"\nBERHENTI: layar tidak bisa dipulihkan - {e}")
+                            break
         finally:
             pengunci.__exit__(None, None, None)
 

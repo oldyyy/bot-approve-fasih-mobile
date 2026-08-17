@@ -80,6 +80,11 @@ PROMPT_APPROVE = "Apa yang Anda ingin lakukan untuk assignment ini ?"
 # Dialog keluar punya beberapa varian teks; hanya pertanyaan intinya yang
 # muncul di semua varian.
 PETUNJUK_DIALOG_KELUAR = ("yakin akan keluar dari halaman ini",)
+
+# Muncul kadang-kadang saat membuka assignment yang versi datanya berbeda
+# antara lokal dan server. Hanya punya satu tombol.
+PETUNJUK_DIALOG_VERSI = ("versi data lokal", "versi data server")
+LBL_BUKA_ASSIGNMENT = ["BUKA ASSIGNMENT"]
 LBL_IYA = ["IYA"]   # dialog ini memakai "IYA", bukan "YA" seperti yang lain
 
 # Jangan tidur selama durasi tetap kalau yang ditunggu bisa dideteksi.
@@ -169,6 +174,23 @@ class AlurGagal(RuntimeError):
     def __init__(self, pesan: str, hasil: "HasilBaris | None" = None):
         super().__init__(pesan)
         self.hasil = hasil
+
+
+class SyaratTakLolos(AlurGagal):
+    """Baris tidak memenuhi syarat kolom.
+
+    Diperiksa sebelum apa pun dibuka, jadi baris ini sama sekali belum
+    tersentuh - aman untuk dilewati maupun dijadikan alasan berhenti,
+    tergantung kebutuhan alurnya.
+    """
+
+
+class DaftarHabis(AlurGagal):
+    """Tidak ada lagi baris yang perlu diproses.
+
+    Ini akhir yang normal, bukan kegagalan - dibedakan supaya run tanpa
+    batas putaran bisa berhenti sendiri tanpa dilaporkan sebagai error.
+    """
 
 
 def periksa_prasyarat(root: ET.Element) -> dict[str, str]:
@@ -469,8 +491,17 @@ def pastikan_daftar_siap(d, wilayah: str | None = None, catat=print) -> str:
     # Paling sering: masih tertinggal di kuesioner karena transisi lambat.
     if AKTIVITAS_FORM in _aktivitas(d):
         catat("    masih di kuesioner - keluar dulu")
-        for _ in range(3):
-            d.press("back")
+        for _ in range(4):
+            # Back memunculkan dialog konfirmasi keluar, dan back berikutnya
+            # tidak menembusnya - dialog itu harus dijawab. IYA aman karena
+            # bot tidak pernah mengubah isian. Berbeda dari keluar_kuesioner
+            # yang sengaja menghentikan run: di sini konteksnya pemulihan
+            # antar-nama, jadi setelah dijawab prosesnya dilanjutkan.
+            if ada_dialog_keluar(layar.pohon(d)):
+                catat("    dialog konfirmasi keluar - tap IYA")
+                tap_label(d, LBL_IYA, batas=15.0)
+            else:
+                d.press("back")
             time.sleep(1.5)
             if AKTIVITAS_FORM not in _aktivitas(d):
                 break
@@ -624,7 +655,7 @@ def baris_pertama(d, lewati: set[str] | None = None) -> layar.Baris:
                 return b
         geser_turun(d)
 
-    raise AlurGagal(
+    raise DaftarHabis(
         "Tidak ada baris tersisa yang belum dicoba di daftar ini "
         f"({len(lewati)} baris sudah dicoba pada run ini)."
     )
@@ -637,24 +668,40 @@ def buka_kuesioner(d, nama: str, catat=print) -> None:
     catat("    tap BUKA")
     tap_label(d, LBL_BUKA)
 
-    # Ditunggu, bukan diperiksa sekali: jeda setelah tap sengaja pendek.
-    try:
-        tunggu_teks(d, [DIALOG_BUKA], batas=20.0)
-    except AlurGagal as e:
-        raise AlurGagal(f"Dialog konfirmasi {DIALOG_BUKA!r} tidak muncul.") from e
+    # Jumlah dan urutan dialog sesudah BUKA tidak tetap: konfirmasi biasa
+    # selalu ada, sedangkan dialog "beda versi data" hanya muncul kadang.
+    # Karena itu yang ditunggu adalah FormGear, dan dialog apa pun yang
+    # menyela ditangani saat terlihat.
+    batas = 90.0
+    tenggat = time.monotonic() + batas
+    sudah_konfirmasi = False
+    while True:
+        if AKTIVITAS_FORM in _aktivitas(d):
+            catat("    FormGear terbuka")
+            return
 
-    catat("    dialog terverifikasi, tap YA")
-    tap_label(d, LBL_YA)
+        root = layar.pohon(d)
+        if ada_petunjuk(root, PETUNJUK_DIALOG_VERSI):
+            catat("    dialog beda versi data - tap BUKA ASSIGNMENT")
+            tap_label(d, LBL_BUKA_ASSIGNMENT, batas=15.0)
+            continue
+        if layar.cari_teks(root, DIALOG_BUKA) is not None:
+            catat("    dialog terverifikasi, tap YA")
+            tap_label(d, LBL_YA)
+            sudah_konfirmasi = True
+            continue
 
-    tenggat = time.monotonic() + 60
-    while AKTIVITAS_FORM not in _aktivitas(d):
         if time.monotonic() >= tenggat:
-            raise AlurGagal("FormGear tidak terbuka dalam 60 detik.")
+            if not sudah_konfirmasi:
+                raise AlurGagal(
+                    f"Dialog konfirmasi {DIALOG_BUKA!r} tidak muncul dalam "
+                    f"{batas:.0f} detik."
+                )
+            raise AlurGagal(f"FormGear tidak terbuka dalam {batas:.0f} detik.")
         time.sleep(JEDA_POLL)
-    catat("    FormGear terbuka")
 
 
-def tunggu_kuesioner_siap(d, batas: float = 60.0) -> None:
+def tunggu_kuesioner_siap(d, batas: float = 90.0) -> None:
     """Tunggu isi kuesioner selesai dirender, bukan hanya activity-nya.
 
     Alur yang tidak memeriksa apa pun mengetuk FAB approve segera setelah
@@ -935,13 +982,18 @@ def approve(d, catat=print) -> None:
     tap_label(d, LBL_YA, batas=30.0)
 
 
-def ada_dialog_keluar(root: ET.Element) -> bool:
-    """Apakah dialog konfirmasi keluar kuesioner sedang tampil."""
+def ada_petunjuk(root: ET.Element, petunjuk: tuple[str, ...]) -> bool:
+    """Apakah ada node yang teksnya memuat seluruh potongan kata petunjuk."""
     for node in root.iter("node"):
         teks = (node.get("text") or "").casefold()
-        if all(k in teks for k in PETUNJUK_DIALOG_KELUAR):
+        if all(k in teks for k in petunjuk):
             return True
     return False
+
+
+def ada_dialog_keluar(root: ET.Element) -> bool:
+    """Apakah dialog konfirmasi keluar kuesioner sedang tampil."""
+    return ada_petunjuk(root, PETUNJUK_DIALOG_KELUAR)
 
 
 def keluar_kuesioner(d, catat=print, batas: float = 45.0,
@@ -1035,6 +1087,8 @@ def proses_satu(d, urutan: int, kering: bool, catat=print,
 
     # Syarat kolom diperiksa sebelum apa pun dibuka. Kalau tidak lolos, bot
     # berhenti tanpa menyentuh assignment - jadi tidak ada baris terlantar.
+    # Nilai syarat boleh berupa teks (harus sama persis) atau fungsi, karena
+    # sebagian kolom berisi gabungan beberapa nilai seperti "- / 43974516".
     for nama_kolom, harus in (syarat_kolom or {}).items():
         ada = layar.nilai_kolom(layar.pohon(d), b, nama_kolom)
         if ada is None:
@@ -1043,10 +1097,13 @@ def proses_satu(d, urutan: int, kering: bool, catat=print,
                 f"tersedia: {layar.kolom_tabel(layar.pohon(d))}"
             )
         catat(f"    {nama_kolom}: {ada!r}")
-        if ada.strip() != harus:
-            raise AlurGagal(
-                f"{b.label} punya {nama_kolom} = {ada!r}, harus {harus!r}. "
-                "Bot berhenti tanpa membuka baris ini."
+        if callable(harus):
+            cocok, diminta = harus(ada), getattr(harus, "penjelasan", "syarat")
+        else:
+            cocok, diminta = ada.strip() == harus, repr(harus)
+        if not cocok:
+            raise SyaratTakLolos(
+                f"{nama_kolom} = {ada!r}, tidak memenuhi {diminta}", hasil=r
             )
 
     pohon = set_bentang(d, b.kunci, True)
@@ -1135,7 +1192,7 @@ def proses_satu(d, urutan: int, kering: bool, catat=print,
     return r
 
 
-def jalankan(d, loop: int, kering: bool, catat=print, simpan=None,
+def jalankan(d, loop: int | None, kering: bool, catat=print, simpan=None,
              diterima: tuple[str, ...] | None = KEBERADAAN_DITERIMA,
              nama_soal: str = "keberadaan",
              kata_cari: str | None = None,
@@ -1169,12 +1226,26 @@ def jalankan(d, loop: int, kering: bool, catat=print, simpan=None,
         if simpan is not None:
             simpan(r)        # ditulis per baris supaya selamat kalau run terputus
 
-    for i in range(1, loop + 1):
+    # loop=None berarti kerjakan sampai daftarnya habis. Jumlah baris yang
+    # sudah dicoba selalu bertambah, jadi baris_pertama pasti kehabisan
+    # kandidat pada suatu titik - run tidak bisa berputar tanpa akhir.
+    i = 0
+    while loop is None or i < loop:
+        i += 1
         try:
             r = proses_satu(d, i, kering, catat=catat, lewati=lewati,
                             wilayah=wilayah, diterima=diterima,
                             nama_soal=nama_soal, kata_cari=kata_cari,
                             putuskan=putuskan, syarat_kolom=syarat_kolom)
+        except DaftarHabis as e:
+            catat(f"\nSELESAI: {e}")
+            break
+        except SyaratTakLolos as e:
+            # Daftar diurutkan sehingga baris yang memenuhi syarat berkumpul
+            # di atas: begitu baris teratas tidak lolos, sisanya juga tidak.
+            catat(f"\nSELESAI: {e.hasil.label} {e} - tidak ada lagi baris "
+                  "yang memenuhi syarat.")
+            break
         except AlurGagal as e:
             if e.hasil is None:
                 catat(f"\nBERHENTI di putaran {i}: {e}")
@@ -1243,6 +1314,10 @@ def pindai(d, maks: int | None = None, catat=print) -> list[HasilBaris]:
             try:
                 pohon = set_bentang(d, b.kunci, True)
                 r.detail = baca_detail(pohon)
+                # Sebagian tabel memuat Status sebagai kolom; nilainya lebih
+                # dipercaya daripada hasil pemotongan label pada detail.
+                if b.status:
+                    r.detail["Status"] = b.status
                 set_bentang(d, b.kunci, False)
             except AlurGagal as e:
                 r.catatan.append(str(e))

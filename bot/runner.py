@@ -33,8 +33,9 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
     p = argparse.ArgumentParser(
         description=deskripsi,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--loop", type=int, required=True,
-                   help="jumlah baris yang diproses (wajib)")
+    p.add_argument("--loop", type=int, default=None,
+                   help="jumlah baris yang diproses; kalau tidak diberi, "
+                        "dikerjakan sampai daftarnya habis")
     p.add_argument("--kering", action="store_true",
                    help="dry-run: satu putaran, berhenti sebelum menekan Aksi")
     p.add_argument("--perangkat", default=None,
@@ -44,7 +45,7 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
                    help="jalan walau wilayahnya terkunci run lain (hati-hati)")
     a = p.parse_args()
 
-    if a.loop < 1:
+    if a.loop is not None and a.loop < 1:
         p.error("--loop harus >= 1")
 
     CATATAN.mkdir(exist_ok=True)
@@ -63,7 +64,8 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
             log.write(teks + "\n")
             log.flush()   # write-ahead: log harus selamat kalau bot mati
 
-        catat(f"# {nama_alur} mode={mode} loop={a.loop} {stempel}")
+        catat(f"# {nama_alur} mode={mode} "
+              f"loop={a.loop if a.loop is not None else 'sampai habis'} {stempel}")
         if putuskan is not None:
             catat(f"# keputusan dari : {nama_soal}")
             catat("# alur ini bisa APPROVE maupun REJECT")
@@ -76,7 +78,9 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
         if kata_cari:
             catat(f"# kata pencarian : {kata_cari!r}")
         if syarat_kolom:
-            catat(f"# syarat kolom   : {syarat_kolom}")
+            ringkas = {k: getattr(v, "penjelasan", v)
+                       for k, v in syarat_kolom.items()}
+            catat(f"# syarat kolom   : {ringkas}")
         if not a.kering:
             catat("# MODE HIDUP: menekan BUKA, YA, APPROVE sungguhan")
 
@@ -151,9 +155,10 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
             catat("\nAda baris terlantar - tangani dulu sebelum run berikutnya.")
             return 1
 
-        # Dry-run hanya menjalankan satu putaran, jadi targetnya beda.
+        # Tanpa --loop tidak ada target: berhenti karena daftar habis adalah
+        # akhir yang normal. Dry-run selalu satu putaran.
         target = 1 if a.kering else a.loop
-        if len(hasil) < target:
+        if target is not None and len(hasil) < target:
             catat("\nCatatan: putaran berhenti lebih awal - baca pesan "
                   "BERHENTI di atas.")
             return 1

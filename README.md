@@ -20,8 +20,8 @@ python -m venv .venv
 ```
 
 Uji logika yang tidak butuh perangkat (parsing angka, pencocokan label,
-pembacaan kolom) - kasusnya diambil dari data nyata yang pernah muncul di
-layar, termasuk yang dulu menyebabkan bug:
+pembacaan kolom, klasifikasi warna, pemilihan baris) - kasusnya diambil dari
+data nyata yang pernah muncul di layar, termasuk yang dulu menyebabkan bug:
 
 ```bash
 .venv\Scripts\python.exe uji.py
@@ -29,18 +29,19 @@ layar, termasuk yang dulu menyebabkan bug:
 
 ## Alur yang tersedia
 
+Alur berbasis **putaran** memproses baris pertama pada daftar tersaring Submit,
+berulang kali. Alur berbasis **daftar nama** mencari tiap nama dan memutuskan
+dari warna barisnya.
+
 | Skrip | Syarat | Tindakan |
 |---|---|---|
-| `jalankan.py` | Keberadaan bernilai kode 0/3/4/5 | approve |
+| `jalankan.py` | keberadaan kode 0/3/4/5 | approve |
 | `bangunan-kosong.py` | Search `kosong`, Kode Penggunaan Bangunan = 6 | approve |
 | `sakernas-pemutakhiran.py` | tidak ada pengecekan isi | approve |
-| `se-approve-nousaha.py` | Jumlah Usaha = 0, lalu baca Selisih Pendapatan | selisih >= 0 approve, < 0 **reject** |
+| `se-approve-nousaha.py` | Jumlah Usaha = 0, lalu Selisih Pendapatan | selisih >= 0 approve, < 0 **reject** |
+| `approve-nofound.py` | Nomor Urut Bangunan = `-`, lalu keberadaan kode 0/3/4/5 | approve |
 | `unapprove-list.py` | daftar nama, baris harus **hijau** | **unapprove**, diulang sampai biru |
 | `reject-list.py` | daftar nama, baris harus **biru** | **reject**, diulang sampai merah |
-
-Empat alur pertama memakai mesin yang sama (`bot/runner.py`) dan memproses N
-baris pertama. Dua alur terakhir memakai `bot/daftar.py`: digerakkan daftar
-nama dan memutuskan berdasarkan warna baris.
 
 `pindai.py` memindai isi wilayah tanpa menyentuh apa pun (hanya membentangkan
 dan menutup baris), berguna untuk melihat isi daftar sebelum memproses.
@@ -50,18 +51,19 @@ dan menutup baris), berguna untuk melihat isi daftar sebelum memproses.
 Buka wilayah yang dituju di BlueStacks sampai tabel assignment tampil, lalu:
 
 ```bash
-.venv\Scripts\python.exe jalankan.py --loop 10 --perangkat 5666
+.venv\Scripts\python.exe jalankan.py --perangkat 5665
+.venv\Scripts\python.exe approve-nofound.py --loop 5 --perangkat 5665
 ```
 
 | Opsi | Arti |
 |---|---|
-| `--loop N` | jumlah baris yang diproses (wajib) |
+| `--loop N` | jumlah baris; tanpa ini dikerjakan sampai daftar habis |
 | `--kering` | dry-run: satu putaran, berhenti sebelum menekan Aksi |
 | `--perangkat` | port instance; wajib kalau lebih dari satu instance jalan |
 | `--abaikan-kunci` | jalan walau wilayahnya terkunci run lain |
 
-`unapprove-list.py` dan `reject-list.py` menerima daftar nama, bukan jumlah
-putaran. Pencariannya bersifat substring, jadi nama boleh dipotong:
+Alur berbasis daftar nama memakai `--nama` atau `--berkas`, bukan `--loop`.
+Pencariannya substring, jadi nama boleh dipotong:
 
 ```bash
 .venv\Scripts\python.exe unapprove-list.py --perangkat 5665 --berkas daftar.txt
@@ -77,14 +79,23 @@ Alat bantu:
 .venv\Scripts\python.exe tools\tap.py --lihat        # isi layar saat ini
 ```
 
-### Beberapa instance sekaligus
+## Kunci wilayah
 
-Bisa berapa pun. Syaratnya tiap instance dibuka di **wilayah berbeda** - kalau
-tidak, kunci wilayah (`catatan/kunci-<kode>.json`) akan menolak run kedua.
+**Semua bot mengunci wilayah yang sedang digarapnya**, termasuk `pindai.py`
+yang sebenarnya tidak mengubah data - ia tetap mengendalikan UI, jadi dua bot
+di wilayah yang sama akan saling merusak navigasi.
+
+Kuncinya berupa `catatan/kunci-<kode wilayah>.json` dan dilepas saat run
+selesai. Run yang dihentikan paksa meninggalkan kuncinya; kunci seperti itu
+diperiksa apakah prosesnya masih hidup dan diambil alih otomatis kalau sudah
+mati. Kunci milik proses yang benar-benar berjalan tetap menahan.
+
+Karena itu beberapa instance boleh jalan bersamaan **asal wilayahnya berbeda**.
 Nama berkas log memuat port, jadi run yang berbarengan tidak saling menimpa.
 
-Alur berbasis warna (`unapprove-list.py`) adalah pengecualian: ia menangkap
-jendela BlueStacks, jadi jendelanya harus terbuka dan tidak diminimalkan.
+Alur berbasis warna (`unapprove-list.py`, `reject-list.py`) adalah pengecualian:
+ia menangkap jendela BlueStacks, jadi jendelanya harus terbuka dan tidak
+diminimalkan.
 
 ## Pengaman
 
@@ -94,12 +105,29 @@ jendela BlueStacks, jadi jendelanya harus terbuka dan tidak diminimalkan.
 - Tombol `HAPUS`, `ASSIGN`, `RESTORE`, `PINDAH MODE`, `Tandai wilayah telah
   selesai`, dan `REJECT` ada di daftar terlarang, dicek ulang tepat sebelum tap
   - `HAPUS` bertetangga dengan `BUKA`, dan `REJECT` bertetangga dengan
-  `APPROVE`. Hanya `se-approve-nousaha.py` yang membuka `REJECT`, lewat izin
-  per-panggilan
+  `APPROVE`. Hanya `se-approve-nousaha.py` dan `reject-list.py` yang membuka
+  `REJECT`, lewat izin per-panggilan
 - Dialog konfirmasi diverifikasi teksnya sebelum ditekan
-- Log ditulis per baris (write-ahead) dan CSV ditulis per baris, jadi run yang
-  terputus tetap meninggalkan catatan lengkap
+- Pencarian yang menghasilkan banyak baris tidak ditebak: dipilih yang nama
+  kepala keluarganya persis sama, atau dicatat sebagai `ambigu` dan dilewati
+- Log dan CSV ditulis per baris (write-ahead), jadi run yang terputus tetap
+  meninggalkan catatan lengkap
 - Bot **berhenti** saat ragu, tidak menebak
+
+### Membedakan selesai dari gagal
+
+Tiga jenis akhir dibedakan supaya kode keluar dan laporannya jujur:
+
+| Kondisi | Arti | Kode keluar |
+|---|---|---|
+| `SELESAI: ... daftar habis` | tidak ada baris tersisa | 0 |
+| `SELESAI: ... tidak memenuhi syarat` | baris teratas bukan sasaran lagi | 0 |
+| `BERHENTI: ...` | ada yang tidak beres | 1 |
+| `TERLANTAR` | assignment terbuka tapi belum diputuskan | 1 |
+
+Syarat kolom diperiksa **sebelum** assignment dibuka, jadi baris yang tidak
+lolos tidak pernah berubah status. Alur yang memakainya mengandalkan daftar
+yang sudah diurutkan: begitu baris teratas tidak lolos, sisanya juga tidak.
 
 ## Struktur
 
@@ -111,6 +139,7 @@ bot/alur.py        langkah-langkah alur di FASIH
 bot/runner.py      mesin alur N-baris-pertama
 bot/daftar.py      mesin alur berdasarkan daftar nama + warna baris
 bot/kunci.py       kunci per wilayah antar-run
+bot/cli.py         argumen bersama alat bantu
 tools/             alat pemetaan manual
 uji.py             uji fungsi murni, tidak butuh perangkat
 catatan/           log & CSV hasil run (tidak di-commit)
@@ -149,18 +178,27 @@ karena DataTables menyembunyikan kolom pada layar sempit. Kalau lebar efektif
 **Nama baris tidak unik.** Banyak assignment bernama sama persis (`BANGUNAN
 KOSONG`, `KAMAR KOSONG`). Identitas baris memakai nama + kolom pembeda lain,
 dengan kolom status sengaja dikecualikan karena nilainya berubah setelah
-diproses.
+diproses. Untuk alur berbasis daftar nama, pencarian yang menghasilkan banyak
+baris diselesaikan dengan memilih yang nama kepala keluarganya - bagian sebelum
+` / ` - persis sama dengan yang dicari.
 
 **Susunan kolom berbeda antar survei.** Indeks kolom tidak boleh dihardcode:
 di SE2026 kolom ketiga adalah Nomor Urut Bangunan/IDSBR yang unik, di Sakernas
 kolom ketiga adalah PMM yang isinya hanya 0 atau 1. Indeks dicari dari nama
-header.
+header. Sebagian kolom berisi gabungan (`- / 47854191` = nomor urut + IDSBR),
+jadi syarat kolom boleh berupa fungsi, bukan hanya nilai yang sama persis.
 
 **Label opsi dicocokkan sebagai awalan.** FASIH sering menambah keterangan di
 belakang label - `0. Tidak Ditemukan (STOP)` pada varian keluarga, `6. Bangunan
 Lainnya yang Tidak Tercakup (Tempat Judi, ...)`. Beberapa tombol juga dirender
 dengan spasi antar huruf (`A P P R O V E`, `U N A P P R O V E`), sehingga
 pencocokan membuang seluruh spasi lebih dulu.
+
+**Jumlah dialog setelah BUKA tidak tetap.** Konfirmasi "Anda akan membuka
+assignment ini?" selalu ada, tapi kadang menyusul "Assignment ini mempunyai
+versi data lokal dan versi data server yang berbeda" dengan tombol `BUKA
+ASSIGNMENT`. Karena itu yang ditunggu adalah FormGear terbuka, dan dialog apa
+pun yang menyela ditangani saat terlihat - bukan mengikuti urutan tetap.
 
 **Angka memakai format Indonesia.** Titik adalah pemisah ribuan, koma pemisah
 desimal: `1.255.952` bernilai satu juta dua ratus ribu.
@@ -189,6 +227,7 @@ masih perlu di-unapprove. Peta warna yang terukur:
 | putih | (255, 255, 255) | Open |
 | biru | (12, 178, 255) | Submit |
 | hijau | (6, 214, 160) | Approve |
+| merah | (239, 71, 111) | Reject |
 
 Urutan pemeriksaan warna menentukan: kuning juga berkomponen merah tinggi,
 jadi ia diuji sebelum merah agar baris Draft tidak terbaca sebagai Reject.
