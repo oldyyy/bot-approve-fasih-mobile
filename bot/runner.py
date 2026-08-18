@@ -131,8 +131,12 @@ def jalankan_cli(*, nama_alur: str, deskripsi: str,
         finally:
             pengunci.__exit__(None, None, None)
 
+        # Catatan reject bisa berupa "rejected" saja atau "rejected: <sebab>",
+        # jadi dicocokkan sebagai awalan - kalau tidak, reject karena nilai
+        # tidak sesuai hilang dari ringkasan.
         selesai = [r for r in hasil if "approved" in r.catatan]
-        ditolak = [r for r in hasil if "rejected" in r.catatan]
+        ditolak = [r for r in hasil
+                   if any(c.startswith("rejected") for c in r.catatan)]
         terlantar = [r for r in hasil
                      if any(c.startswith("TERLANTAR") for c in r.catatan)]
         catat(f"\nPutaran dijalankan : {len(hasil)}")

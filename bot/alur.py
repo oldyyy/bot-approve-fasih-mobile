@@ -185,6 +185,15 @@ class SyaratTakLolos(AlurGagal):
     """
 
 
+class NilaiTakSesuai(AlurGagal):
+    """Isi kuesioner terbaca, tapi nilainya di luar daftar yang diterima.
+
+    Dibedakan dari kegagalan teknis: di sini datanya jelas, hanya tidak
+    memenuhi syarat - jadi assignment-nya di-reject. Kegagalan membaca layar
+    tidak boleh diperlakukan sama, karena datanya belum tentu salah.
+    """
+
+
 class DaftarHabis(AlurGagal):
     """Tidak ada lagi baris yang perlu diproses.
 
@@ -1004,9 +1013,10 @@ def keluar_kuesioner(d, catat=print, batas: float = 45.0,
     masih berada di dalam kuesioner dan pasti gagal - persis yang membuat
     mode 'catat lalu lanjut' tidak pernah benar-benar melanjutkan.
 
-    Kalau back tidak berhasil, kemungkinan ada dialog yang belum dipetakan.
-    Isinya dilaporkan apa adanya dan bot berhenti; tombolnya tidak ditebak,
-    karena pilihan yang salah bisa membuang atau menyimpan isian.
+    Dialog konfirmasi keluar dijawab IYA - aman karena bot tidak pernah
+    mengubah isian kuesioner. Baris yang bermasalah sudah dicatat pemanggil,
+    jadi di sini tugasnya hanya mengembalikan layar supaya baris berikutnya
+    bisa diproses.
     """
     if AKTIVITAS_DAFTAR in _aktivitas(d):
         return
@@ -1024,16 +1034,10 @@ def keluar_kuesioner(d, catat=print, batas: float = 45.0,
             raise AlurGagal(f"Terdampar di layar tak dikenal: {kini}")
 
         if ada_dialog_keluar(layar.pohon(d)):
-            # Bot tidak pernah mengubah isian, jadi IYA aman. Tapi
-            # munculnya dialog ini menandakan baris perlu diperiksa.
-            catat("    dialog konfirmasi keluar muncul - menekan IYA "
-                  "lalu berhenti")
+            catat("    dialog konfirmasi keluar - tap IYA")
             tap_label(d, LBL_IYA, batas=15.0)
-            raise AlurGagal(
-                "Muncul dialog konfirmasi keluar dari kuesioner. IYA sudah "
-                "ditekan supaya tidak tersangkut, dan run dihentikan untuk "
-                "diperiksa."
-            )
+            time.sleep(1.0)
+            continue
 
         d.press("back")
         ditekan += 1
@@ -1158,9 +1162,9 @@ def proses_satu(d, urutan: int, kering: bool, catat=print,
             r.detail["NilaiSoal"] = nilai
             catat(f"    {nama_soal}: {nilai!r}")
             if not cocok:
-                raise AlurGagal(
-                    f"{b.label} sudah terbuka tapi {nama_soal}-nya {nilai!r}, "
-                    f"bukan salah satu dari {list(diterima)}."
+                raise NilaiTakSesuai(
+                    f"{nama_soal} = {nilai!r}, bukan salah satu dari "
+                    f"{list(diterima)}"
                 )
             approve(d, catat=catat)
         else:
@@ -1171,12 +1175,12 @@ def proses_satu(d, urutan: int, kering: bool, catat=print,
             tunggu_kuesioner_siap(d)
             catat("    form siap - langsung approve")
             approve(d, catat=catat)
+    except NilaiTakSesuai as e:
+        raise NilaiTakSesuai(str(e), hasil=r) from e
     except AlurGagal as e:
         r.catatan.append(f"TERLANTAR: {e}")
         raise AlurGagal(
-            f"{e} Assignment ini kini TERLANTAR (terbuka, belum approve) dan "
-            "perlu ditangani manual. Bot berhenti.",
-            hasil=r,
+            f"{e} Assignment ini terbuka tapi belum diputuskan.", hasil=r
         ) from e
 
     # Aksi sudah terkirim; catatan ditulis lebih dulu agar baris yang
@@ -1240,6 +1244,30 @@ def jalankan(d, loop: int | None, kering: bool, catat=print, simpan=None,
         except DaftarHabis as e:
             catat(f"\nSELESAI: {e}")
             break
+        except NilaiTakSesuai as e:
+            # Nilainya terbaca jelas dan memang tidak memenuhi syarat, jadi
+            # assignment-nya di-reject lalu run lanjut. Sebabnya tetap
+            # dicatat supaya keputusan ini bisa ditelusuri belakangan.
+            r = e.hasil
+            catat(f"    TIDAK SESUAI: {r.label}")
+            catat(f"      sebab: {e}")
+            try:
+                reject(d, catat=catat)
+                r.catatan.append(f"rejected: {e}")
+                r.detail["Keputusan"] = "reject"
+                catat("    di-REJECT karena nilainya tidak sesuai")
+                pastikan_daftar_siap(d, wilayah=wilayah, catat=catat)
+            except AlurGagal as gagal:
+                r.catatan.append(f"TERLANTAR: gagal reject - {gagal}")
+                catat(f"    gagal me-reject: {gagal}")
+                try:
+                    keluar_kuesioner(d, catat=catat, wilayah=wilayah)
+                except AlurGagal as keluar:
+                    rekam(r)
+                    catat(f"\nBERHENTI di putaran {i}: {keluar}")
+                    break
+            rekam(r)
+            continue
         except SyaratTakLolos as e:
             # Daftar diurutkan sehingga baris yang memenuhi syarat berkumpul
             # di atas: begitu baris teratas tidak lolos, sisanya juga tidak.

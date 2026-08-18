@@ -28,14 +28,19 @@ class GagalTangkap(RuntimeError):
 
 
 def nama_instance(serial: str) -> str | None:
-    """Nama tampilan instance untuk sebuah port ADB, dari bluestacks.conf."""
+    """Nama tampilan instance untuk sebuah port ADB, dari bluestacks.conf.
+
+    Tiap instance punya dua entri port - `adb_port` dan `status.adb_port` -
+    dan koneksi bisa memakai salah satunya, jadi keduanya dicocokkan.
+    """
     port = serial.rsplit(":", 1)[-1]
     if not CONF.exists():
         return None
     teks = CONF.read_text(encoding="utf-8", errors="ignore")
-    for inst in set(re.findall(r"bst\.instance\.([^.]+)\.adb_port", teks)):
-        cocok = re.search(rf'bst\.instance\.{re.escape(inst)}\.adb_port="{port}"', teks)
-        if not cocok:
+    for inst in set(re.findall(r"bst\.instance\.([^.]+)\.(?:status\.)?adb_port", teks)):
+        pola = (rf'bst\.instance\.{re.escape(inst)}\.(?:status\.)?adb_port'
+                rf'="{port}"')
+        if not re.search(pola, teks):
             continue
         nama = re.search(
             rf'bst\.instance\.{re.escape(inst)}\.display_name="([^"]*)"', teks)

@@ -110,13 +110,28 @@ diminimalkan.
 - Dialog konfirmasi diverifikasi teksnya sebelum ditekan
 - Pencarian yang menghasilkan banyak baris tidak ditebak: dipilih yang nama
   kepala keluarganya persis sama, atau dicatat sebagai `ambigu` dan dilewati
+- Nilai kuesioner yang terbaca tapi di luar syarat membuat assignment-nya
+  **di-reject**, bukan dibiarkan menggantung - lihat di bawah
 - Log dan CSV ditulis per baris (write-ahead), jadi run yang terputus tetap
   meninggalkan catatan lengkap
 - Bot **berhenti** saat ragu, tidak menebak
 
-### Membedakan selesai dari gagal
+### Nilai tidak sesuai vs gagal teknis
 
-Tiga jenis akhir dibedakan supaya kode keluar dan laporannya jujur:
+Dua hal ini sengaja dibedakan, karena tindakannya berbeda:
+
+| Jenis | Contoh | Tindakan |
+|---|---|---|
+| **Nilai tidak sesuai** | kode bangunan `4` padahal syaratnya `6` | **REJECT** + log sebabnya, run lanjut |
+| **Gagal teknis** | kuesioner tidak selesai dirender, nilai tidak terbaca | catat `TERLANTAR`, run lanjut tanpa reject |
+
+Kalau bot **gagal membaca** layar, datanya belum tentu salah - me-reject karena
+bot tidak bisa melihat berarti mengembalikan pekerjaan pencacah yang mungkin
+sudah benar. Jadi reject hanya untuk nilai yang terbaca jelas dan memang di
+luar syarat. Sebabnya masuk log dan kolom `catatan` di CSV, lengkap dengan
+nilai yang mendasarinya.
+
+### Membedakan selesai dari gagal
 
 | Kondisi | Arti | Kode keluar |
 |---|---|---|
@@ -199,6 +214,13 @@ assignment ini?" selalu ada, tapi kadang menyusul "Assignment ini mempunyai
 versi data lokal dan versi data server yang berbeda" dengan tombol `BUKA
 ASSIGNMENT`. Karena itu yang ditunggu adalah FormGear terbuka, dan dialog apa
 pun yang menyela ditangani saat terlihat - bukan mengikuti urutan tetap.
+Dialog "yakin akan keluar dari halaman ini?" saat meninggalkan kuesioner
+dijawab IYA lalu proses lanjut; aman karena bot tidak pernah mengubah isian.
+
+**Satu instance punya dua entri port** di `bluestacks.conf` - `adb_port` dan
+`status.adb_port` - dan koneksi bisa memakai salah satunya. Pemetaan port ke
+nama jendela mencocokkan keduanya; kalau hanya satu, alur berbasis warna gagal
+menemukan jendelanya.
 
 **Angka memakai format Indonesia.** Titik adalah pemisah ribuan, koma pemisah
 desimal: `1.255.952` bernilai satu juta dua ratus ribu.
